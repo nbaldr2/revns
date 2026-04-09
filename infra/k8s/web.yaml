@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: revns-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: revns-web
+  template:
+    metadata:
+      labels:
+        app: revns-web
+    spec:
+      containers:
+      - name: web
+        image: revns-web:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: revns-web
+  labels:
+    app: revns-web
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3000
+    name: http
+  selector:
+    app: revns-web
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: revns-web-lb
+  labels:
+    app: revns-web
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 3000
+    name: http
+  selector:
+    app: revns-web
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: revns-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: revns.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: revns-web
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: revns-api
+            port:
+              number: 80

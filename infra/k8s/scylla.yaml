@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scylla-init
+data:
+  init.cql: |
+    CREATE KEYSPACE IF NOT EXISTS domain_data 
+    WITH replication = {'class': 'NetworkTopologyStrategy', 'datacenter1': 3};
+    
+    USE domain_data;
+    
+    CREATE TABLE IF NOT EXISTS reverse_ns (
+        ns text,
+        domain text,
+        rank int,
+        PRIMARY KEY (ns, domain)
+    ) WITH CLUSTERING ORDER BY (domain ASC)
+      AND compaction = {'class': 'LeveledCompactionStrategy'}
+      AND compression = {'class': 'LZ4Compressor'};
+    
+    CREATE TABLE IF NOT EXISTS domain_metadata (
+        domain text PRIMARY KEY,
+        ns_list list<text>,
+        ip_list list<text>,
+        rank int,
+        created_at timestamp
+    );
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scylla
+spec:
+  serviceName: scylla
+  replicas: 3
+  selector:
+    matchLabels:
+      app: scylla
+  template:
+    metadata:
+      labels:
+        app: scylla
+    spec:
+      containers:
+      - name: scylla
+        image: scylladb/scylla:6.2
+        args:
+        - --smp
+        - "2"
+        - --memory
+        - "4G"
+        - --overprovisioned
+        - "1"
+        - --developer-mode
+        - "0"
+        ports:
+        - containerPort: 9042
+          name: cql
+        - containerPort: 7000
+          name: intra-node
+        - containerPort: 7001
+          name: tls-intra-node
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/scylla
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - cqlsh -e "describe keyspaces"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: init-script
+        configMap:
+          name: scylla-init
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scylla
+  labels:
+    app: scylla
+spec:
+  ports:
+  - port: 9042
+    name: cql
+  clusterIP: None
+  selector:
+    app: scylla
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scylla-lb
+  labels:
+    app: scylla
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 9042
+    targetPort: 9042
+    name: cql
+  selector:
+    app: scylla

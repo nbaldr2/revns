@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # ScyllaDB - Distributed NoSQL database
+  scylla:
+    image: scylladb/scylla:6.2
+    container_name: revns-scylla
+    restart: unless-stopped
+    ports:
+      - "9042:9042"  # CQL port
+      - "9160:9160"  # Thrift port
+      - "9180:9180"  # Prometheus metrics
+    volumes:
+      - scylla_data:/var/lib/scylla
+      - ./infra/init.cql:/docker-entrypoint-initdb.d/init.cql:ro
+    environment:
+      - SCYLLA_CLUSTER_NAME=REVNS Cluster
+      - SCYLLA_DC=datacenter1
+      - SCYLLA_RACK=rack1
+    command: --smp 2 --memory 4G --overprovisioned 1
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - revns-network
+
+  # Redis - Caching layer
+  redis:
+    image: redis:7-alpine
+    container_name: revns-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - revns-network
+
+  # API Server - Go backend
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: revns-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SCYLLA_HOSTS=scylla
+      - SCYLLA_PORT=9042
+      - SCYLLA_KEYSPACE=domain_data
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - API_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - GIN_MODE=release
+    depends_on:
+      scylla:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - revns-network
+
+  # Web Frontend - React + Nginx
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: revns-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - revns-network
+
+  # Optional: ClickHouse for analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: revns-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"  # HTTP
+      - "9000:9000"  # Native
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./infra/clickhouse_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - CLICKHOUSE_DB=analytics
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+    networks:
+      - revns-network
+
+  # Optional: Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: revns-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    networks:
+      - revns-network
+
+  # Optional: Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: revns-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    networks:
+      - revns-network
+
+volumes:
+  scylla_data:
+  redis_data:
+  clickhouse_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  revns-network:
+    driver: bridge

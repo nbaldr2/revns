@@ -1,0 +1,63 @@
+services:
+  scylla-node1:
+    image: scylladb/scylla:6.2
+    container_name: scylla-node1
+    hostname: scylla-node1
+    command: --smp 1 --memory 1G --developer-mode 1 --listen-address=0.0.0.0 --rpc-address=0.0.0.0 --broadcast-rpc-address=scylla-node1
+    ports:
+      - "9042:9042"
+    volumes:
+      - scylla-node1-data:/var/lib/scylla
+      - ./init.cql:/docker-entrypoint-initdb.d/init.cql
+    networks:
+      - scylla-net
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  scylla-node2:
+    image: scylladb/scylla:6.2
+    container_name: scylla-node2
+    hostname: scylla-node2
+    command: --seeds=scylla-node1 --smp 1 --memory 1G --developer-mode 1 --listen-address=0.0.0.0 --rpc-address=0.0.0.0 --broadcast-rpc-address=scylla-node2
+    depends_on:
+      scylla-node1:
+        condition: service_healthy
+    volumes:
+      - scylla-node2-data:/var/lib/scylla
+    networks:
+      - scylla-net
+
+  scylla-node3:
+    image: scylladb/scylla:6.2
+    container_name: scylla-node3
+    hostname: scylla-node3
+    command: --seeds=scylla-node1 --smp 1 --memory 1G --developer-mode 1 --listen-address=0.0.0.0 --rpc-address=0.0.0.0 --broadcast-rpc-address=scylla-node3
+    depends_on:
+      scylla-node1:
+        condition: service_healthy
+    volumes:
+      - scylla-node3-data:/var/lib/scylla
+    networks:
+      - scylla-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: revns-redis
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    networks:
+      - scylla-net
+
+networks:
+  scylla-net:
+    driver: bridge
+
+volumes:
+  scylla-node1-data:
+  scylla-node2-data:
+  scylla-node3-data:
