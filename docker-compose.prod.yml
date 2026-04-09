@@ -17,7 +17,7 @@ services:
       - SCYLLA_CLUSTER_NAME=REVNS Cluster
       - SCYLLA_DC=datacenter1
       - SCYLLA_RACK=rack1
-    command: --smp 2 --memory 4G --overprovisioned 1
+    command: --smp 1 --memory 2G --overprovisioned 1
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
       interval: 30s
