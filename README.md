@@ -210,6 +210,4 @@ curl -O "http://localhost:8081/api/v1/provider-search.csv?domain=cloudflare.com"
 - Kubernetes
 - Docker Compose
 
-## License
-
-MIT
+ 
