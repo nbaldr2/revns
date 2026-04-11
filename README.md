@@ -1,6 +1,15 @@
 # REVNS - Reverse Nameserver Lookup
 
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://reactjs.org)
+[![ScyllaDB](https://img.shields.io/badge/ScyllaDB-6.2-0085FF?style=flat)](https://www.scylladb.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A high-performance reverse nameserver lookup system built with Go, ScyllaDB, ClickHouse, Redis, and React.
+
+**🔗 Connect on GitHub:** [github.com/nbaldr2/revns](https://github.com/nbaldr2/revns)
+
+**⭐ Star this repo if you find it useful!**
 
 ## Architecture
 
