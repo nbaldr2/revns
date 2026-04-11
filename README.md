@@ -1,13 +1,13 @@
 # REVNS - Reverse Nameserver Lookup
 
-A high-performance reverse nameserver lookup system built with Go, ScyllaDB, Redis, and React.
+A high-performance reverse nameserver lookup system built with Go, ScyllaDB, ClickHouse, Redis, and React.
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   React     │────▶│   Go API    │────▶│  ScyllaDB   │
-│   Frontend  │     │   (Gin)     │     │  (3 nodes)  │
+│   Frontend  │     │   (Gin)     │     │ (Operational) │
 └─────────────┘     └─────────────┘     └─────────────┘
                            │
                            ▼
@@ -15,14 +15,26 @@ A high-performance reverse nameserver lookup system built with Go, ScyllaDB, Red
                     │    Redis    │
                     │    Cache    │
                     └─────────────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ ClickHouse  │
+                    │ (Analytics) │
+                    └─────────────┘
 ```
 
 ## Features
 
 - **High Performance**: Singleflight request coalescing, Redis caching, ScyllaDB for distributed storage
+- **Hybrid Database Architecture**: ScyllaDB for operational queries, ClickHouse for analytics
+- **Fast Provider Search**: Search domains by provider domain (e.g., cloudflare.com)
+- **CSV Export**: Download domain lists as CSV for any provider
+- **Data Deduplication**: Clean duplicate domain entries across legacy and sharded tables
+- **Upload Controls**: Pause, resume, and cancel CSV uploads with real-time progress
+- **Circuit Breaker**: Resilient database connections with automatic failover
 - **Pagination**: Efficient cursor-based pagination for large datasets
 - **Rate Limiting**: Token bucket algorithm for API protection
-- **Observability**: Prometheus metrics, Zap structured logging
+- **Observability**: Prometheus metrics, Grafana dashboards, Zap structured logging
 - **Horizontal Scaling**: Kubernetes-ready with HPA
 
 ## Quick Start
@@ -131,9 +143,32 @@ make load-test
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/ns/:nameserver` | Get domains by nameserver |
+| GET | `/api/v1/ns/:nameserver/all` | Get all domains for a nameserver (no pagination) |
+| GET | `/api/v1/stats` | Global statistics (domains, nameservers, providers) |
+| GET | `/api/v1/hosting-providers` | List all hosting providers |
+| GET | `/api/v1/hosting-providers/top` | Top 10 hosting providers by domain count |
+| GET | `/api/v1/hosting-providers/:provider/ns` | Nameserver breakdown for a provider |
+| GET | `/api/v1/provider-search` | Fast provider domain search |
+| GET | `/api/v1/provider-search.csv` | Download CSV of provider domains |
+| POST | `/api/v1/upload` | Upload CSV file with domain data |
+| GET | `/api/v1/upload/status` | Check upload processing status |
+| GET | `/api/v1/upload/errors` | Get upload error details |
+| POST | `/api/v1/deduplicate` | Clean duplicate domain entries |
+| GET | `/api/v1/duplicates/stats` | Get duplicate statistics |
 | GET | `/health/live` | Liveness probe |
 | GET | `/health/ready` | Readiness probe |
+| GET | `/health/circuit-breakers` | Circuit breaker status |
 | GET | `/metrics` | Prometheus metrics |
+
+### Provider Search Examples
+
+```bash
+# Search domains by provider domain
+curl "http://localhost:8081/api/v1/provider-search?domain=cloudflare.com"
+
+# Download CSV of all domains for a provider
+curl -O "http://localhost:8081/api/v1/provider-search.csv?domain=cloudflare.com"
+```
 
 ## Query Parameters
 
