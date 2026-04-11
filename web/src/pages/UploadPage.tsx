@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2, Database, Pause, Play, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { uploadCSV, getUploadStatus, getUploadErrors } from '../api'
+import { uploadCSV, getUploadStatus, getUploadErrors, cleanDuplicates, getDuplicateStats } from '../api'
 import type { UploadStatus, FailedRow } from '../types'
 
 interface FileUpload {
@@ -11,19 +11,27 @@ interface FileUpload {
   error: string | null
   failedRows: FailedRow[]
   failedCount: number
+  paused: boolean
+  abortController?: AbortController
 }
 
 export default function UploadPage() {
   const navigate = useNavigate()
   const [uploads, setUploads] = useState<FileUpload[]>([])
+  const pausedUploads = useRef<Set<string>>(new Set())
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pollingRefs = useRef<Map<string, number>>(new Map())
 
-  const startPolling = useCallback((filename: string) => {
+  const startPolling = useCallback((uploadId: string, filename: string) => {
     if (pollingRefs.current.has(filename)) return
 
     const intervalId = window.setInterval(async () => {
+      // Skip if paused
+      if (pausedUploads.current.has(uploadId)) {
+        return
+      }
+
       try {
         const status = await getUploadStatus(filename)
         setUploads((prev) =>
@@ -91,6 +99,8 @@ export default function UploadPage() {
       error: null,
       failedRows: [],
       failedCount: 0,
+      paused: false,
+      abortController: new AbortController(),
     }))
 
     setUploads((prev) => [...prev, ...newUploads])
@@ -98,9 +108,9 @@ export default function UploadPage() {
     // Upload files one by one (no bulk)
     for (const upload of newUploads) {
       try {
-        const response = await uploadCSV(upload.file)
+        const response = await uploadCSV(upload.file, upload.abortController?.signal)
         console.log('Upload started:', response)
-        startPolling(upload.file.name)
+        startPolling(upload.id, upload.file.name)
       } catch (err) {
         setUploads((prev) =>
           prev.map((u) =>
@@ -223,6 +233,46 @@ export default function UploadPage() {
                   <span className="file-size">{formatFileSize(upload.file.size)}</span>
                 </div>
                 <div className="upload-item-status">{getStatusIcon(upload.status)}</div>
+                <div className="upload-item-controls">
+                  {(upload.status?.status === 'uploading' || upload.status?.status === 'processing') && (
+                    <>
+                      <button
+                        className="control-btn pause-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (upload.paused) {
+                            pausedUploads.current.delete(upload.id)
+                            setUploads(prev => prev.map(u => u.id === upload.id ? { ...u, paused: false } : u))
+                          } else {
+                            pausedUploads.current.add(upload.id)
+                            setUploads(prev => prev.map(u => u.id === upload.id ? { ...u, paused: true } : u))
+                          }
+                        }}
+                        title={upload.paused ? 'Resume' : 'Pause'}
+                      >
+                        {upload.paused ? <Play size={16} /> : <Pause size={16} />}
+                      </button>
+                      <button
+                        className="control-btn cancel-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm('Cancel this upload?')) {
+                            upload.abortController?.abort()
+                            const id = pollingRefs.current.get(upload.file.name)
+                            if (id) {
+                              clearInterval(id)
+                              pollingRefs.current.delete(upload.file.name)
+                            }
+                            setUploads(prev => prev.filter(u => u.id !== upload.id))
+                          }
+                        }}
+                        title="Cancel"
+                      >
+                        <X size={16} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {upload.error && (
@@ -345,6 +395,50 @@ facebook.com,9,ns1.facebook.com
           </ul>
         </section>
       )}
+
+      {/* Deduplication Section */}
+      <section className="deduplication-section">
+        <h3>
+          <Database size={20} />
+          Database Maintenance
+        </h3>
+        <p className="dedup-description">
+          Remove duplicate domain entries to optimize database size and query performance.
+        </p>
+        <div className="dedup-actions">
+          <button
+            className="dedup-stats-btn"
+            onClick={async () => {
+              try {
+                const stats = await getDuplicateStats()
+                alert(`Duplicate Stats:\nLegacy table: ${stats.legacy_table_duplicates} duplicate groups\nSharded table (sample): ${stats.sharded_table_bucket_sample} duplicate groups\nEstimated total duplicates: ${stats.sharded_table_estimated}`)
+              } catch (err) {
+                alert('Failed to get duplicate stats: ' + (err instanceof Error ? err.message : 'Unknown error'))
+              }
+            }}
+          >
+            <Database size={16} />
+            Check Duplicates
+          </button>
+          <button
+            className="dedup-clean-btn"
+            onClick={async () => {
+              if (!confirm('This will remove all duplicate domain entries. Continue?')) {
+                return
+              }
+              try {
+                const result = await cleanDuplicates()
+                alert(`Deduplication complete!\nRemoved: ${result.duplicates_removed.toLocaleString()} duplicates\nRemaining domains: ${result.total_domains.toLocaleString()}\nTime: ${result.time_taken}`)
+              } catch (err) {
+                alert('Deduplication failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
+              }
+            }}
+          >
+            <Trash2 size={16} />
+            Clean Duplicates
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

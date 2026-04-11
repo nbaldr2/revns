@@ -48,8 +48,8 @@ func GetProviderNSBreakdown(c *gin.Context) {
 	c.JSON(http.StatusOK, breakdown)
 }
 
-// fetchProviderNSBreakdownFromTable reads from the pre-aggregated provider_ns table
-// This is O(1) for a single provider vs the previous O(n) full table scan
+// fetchProviderNSBreakdownFromTable reads from provider_ns table but verifies counts from reverse_ns
+// This ensures accurate counts even when provider_ns has stale data
 func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvider string) (models.ProviderNSBreakdownResponse, error) {
 	response := models.ProviderNSBreakdownResponse{
 		Provider: provider,
@@ -69,23 +69,27 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 		return response, err
 	}
 
-	// Query from provider_ns table - pre-aggregated during ingestion
-	// This table has provider as partition key and ns as clustering key
-	query := "SELECT ns, domain_count FROM provider_ns WHERE provider = ?"
+	// Get list of nameservers from provider_ns table
+	query := "SELECT ns FROM provider_ns WHERE provider = ?"
 	iter := db.Session.Query(query, provider).Iter()
 
+	var nsList []string
 	var ns string
-	var domainCount int64
-
-	for iter.Scan(&ns, &domainCount) {
-		response.NSCounts = append(response.NSCounts, models.NSCount{
-			Nameserver: ns,
-			Count:      domainCount,
-		})
+	for iter.Scan(&ns) {
+		nsList = append(nsList, ns)
 	}
 
 	if err := iter.Close(); err != nil {
 		return response, err
+	}
+
+	// FIX: Get actual counts from reverse_ns table (accurate source)
+	for _, ns := range nsList {
+		actualCount := getActualNSCount(ctx, ns)
+		response.NSCounts = append(response.NSCounts, models.NSCount{
+			Nameserver: ns,
+			Count:      actualCount,
+		})
 	}
 
 	// Sort by count (descending)
@@ -105,4 +109,33 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 	}
 
 	return response, nil
+}
+
+// getActualNSCount gets the real domain count from reverse_ns table
+func getActualNSCount(ctx context.Context, ns string) int64 {
+	var count int64
+	// Try legacy table first
+	query := "SELECT COUNT(*) FROM reverse_ns WHERE ns = ?"
+	err := db.Session.Query(query, ns).WithContext(ctx).Scan(&count)
+	if err == nil && count > 0 {
+		return count
+	}
+	
+	// If legacy has no data, try sharded table
+	var shardedCount int64
+	for bucket := 0; bucket < 100; bucket++ {
+		var bucketCount int64
+		query := "SELECT COUNT(*) FROM reverse_ns_sharded WHERE ns = ? AND bucket = ?"
+		err := db.Session.Query(query, ns, bucket).WithContext(ctx).Scan(&bucketCount)
+		if err == nil {
+			shardedCount += bucketCount
+		}
+	}
+	
+	if shardedCount > 0 {
+		return shardedCount
+	}
+	
+	// Return legacy count even if 0 (fallback)
+	return count
 }

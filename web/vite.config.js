@@ -7,17 +7,17 @@ export default defineConfig({
         strictPort: false,
         proxy: {
             '/api': {
-                target: 'http://localhost:8080',
+                target: 'http://localhost:8081',
                 changeOrigin: true,
                 secure: false,
             },
             '/health': {
-                target: 'http://localhost:8080',
+                target: 'http://localhost:8081',
                 changeOrigin: true,
                 secure: false,
             },
             '/metrics': {
-                target: 'http://localhost:8080',
+                target: 'http://localhost:8081',
                 changeOrigin: true,
                 secure: false,
             },

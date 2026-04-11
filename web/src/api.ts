@@ -6,6 +6,7 @@ import type {
   UploadStatus,
   UploadErrorsResponse,
   GlobalStatsResponse,
+  DomainNSMapping,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -78,13 +79,14 @@ export function getProviderNSBreakdown(provider: string, signal?: AbortSignal) {
   )
 }
 
-export function uploadCSV(file: File): Promise<{ message: string; filename: string; status_url: string }> {
+export function uploadCSV(file: File, signal?: AbortSignal): Promise<{ message: string; filename: string; status_url: string }> {
   const formData = new FormData()
   formData.append('file', file)
 
   return fetch(`${API_BASE_URL}/api/v1/upload`, {
     method: 'POST',
     body: formData,
+    signal,
   }).then(async (response) => {
     if (!response.ok) {
       const body = await response.json().catch(() => ({ error: 'Upload failed' }))
@@ -104,4 +106,36 @@ export function getUploadErrors(filename: string, signal?: AbortSignal) {
 
 export function getGlobalStats(signal?: AbortSignal) {
   return request<GlobalStatsResponse>('/api/v1/stats', signal)
+}
+
+export function searchProviderDomain(domain: string, signal?: AbortSignal) {
+  return request<{
+    provider_domain: string
+    nameservers: string[]
+    total: number
+    returned: number
+    domains: DomainNSMapping[]
+    response_time_ms: number
+  }>(`/api/v1/provider-search?domain=${encodeURIComponent(domain)}`, signal)
+}
+
+// Deduplication API
+export function cleanDuplicates() {
+  return fetch(`${API_BASE_URL}/api/v1/deduplicate`, {
+    method: 'POST',
+  }).then(async (response) => {
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: 'Deduplication failed' }))
+      throw new Error(body.error || `Failed with status ${response.status}`)
+    }
+    return response.json()
+  })
+}
+
+export function getDuplicateStats() {
+  return request<{
+    legacy_table_duplicates: number
+    sharded_table_bucket_sample: number
+    sharded_table_estimated: number
+  }>('/api/v1/duplicates/stats')
 }

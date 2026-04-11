@@ -44,6 +44,12 @@ export interface ProviderNSBreakdownResponse {
   cached: boolean
 }
 
+// Domain to nameserver mapping for provider search
+export interface DomainNSMapping {
+  domain: string
+  nameserver: string
+}
+
 export interface UploadStatus {
   filename: string
   status: 'uploading' | 'processing' | 'completed' | 'error'
@@ -77,4 +83,69 @@ export interface GlobalStatsResponse {
   total_domains: number
   total_rows: number      // Raw rows uploaded (includes duplicates)
   response_time_ms: number
+}
+
+// Analytics types
+export interface TimeSeriesData {
+  date: string
+  value: number
+}
+
+export interface TopProvider {
+  name: string
+  count: number
+  percentage: number
+}
+
+export interface CurrentStats {
+  TotalDomains: number
+  TotalProviders: number
+  TotalNameservers: number
+  DataPoints: number
+}
+
+export interface Growth {
+  DomainGrowth: number
+  DomainGrowthPct: number
+  ProviderGrowth: number
+  ProviderGrowthPct: number
+  NSGrowth: number
+  NSGrowthPct: number
+}
+
+export interface TimeRange {
+  Days: number
+  StartDate: string
+  EndDate: string
+}
+
+export interface AnalyticsSummary {
+  CurrentStats: CurrentStats
+  Growth: Growth
+  TopProviders: TopProvider[]
+  TimeRange: TimeRange
+  total_uploads: number
+  total_rows: number
+  success_rate: number
+  avg_rows_per_upload: number
+}
+
+export interface DailyStat {
+  date: string
+  total_domains: number
+  new_domains: number
+}
+
+export interface TopNameserver {
+  ns: string
+  total_domains: number
+}
+
+export interface DashboardAnalytics {
+  DailyStats: DailyStat[]
+  TopNameservers: TopNameserver[]
+  uploads_by_day: TimeSeriesData[]
+  top_providers: TopProvider[]
+  ns_distribution: { name: string; value: number }[]
+  recent_uploads: UploadStatus[]
 }

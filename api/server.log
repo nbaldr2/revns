@@ -1,0 +1,6 @@
+2026/04/11 13:12:13 Connected to ScyllaDB cluster at 127.0.0.1 (Keyspace: domain_data)
+2026/04/11 13:12:13 Connection pool: NumConns=8, MaxPending=256, Consistency=LOCAL_ONE, MaxRetries=3
+2026/04/11 13:12:13 Connected to Redis at 127.0.0.1:6379 (PoolSize=100, MinIdleConns=10, MaxConnAge=30m0s)
+2026/04/11 13:12:13 Warming cache with commonly accessed data...
+2026/04/11 13:12:13 Cache warming complete
+2026/04/11 13:12:13 Starting server on :8080

@@ -131,10 +131,25 @@ func fetchReverseNS(ctx context.Context, ns string, page, limit int) (models.Rev
 		return response, err
 	}
 
+	// FIX: If we got empty domains but total > 0, the count cache is stale
+	// This happens when data was deleted from ScyllaDB but the Redis count wasn't invalidated
+	if len(domains) == 0 && total > 0 {
+		// Invalidate the stale count cache
+		cache.Client.Del(ctx, countKey)
+		// Re-query the actual count from ScyllaDB
+		realTotal, countErr := getTotalCount(ctx, ns)
+		if countErr == nil {
+			response.Total = realTotal
+		}
+	}
+
 	response.Domains = domains
 
-	// Async populate cache
-	go populateCache(ns, offset, limit, domains)
+	// Only populate cache if we have domains
+	if len(domains) > 0 {
+		// Async populate cache
+		go populateCache(ns, offset, limit, domains)
+	}
 
 	return response, nil
 }
@@ -211,26 +226,49 @@ func fetchFromCompressedCache(ctx context.Context, ns string, offset, limit int)
 func fetchFromScylla(ctx context.Context, ns string, offset, limit int) ([]string, error) {
 	// Probe sharded table availability once per request. If it's not configured,
 	// transparently fall back to legacy table to avoid 500 errors.
-	probeIter := db.Session.Query(
-		"SELECT domain FROM reverse_ns_sharded WHERE ns = ? AND bucket = ? LIMIT 1",
-		ns,
-		0,
-	).Iter()
-	var probeDomain string
-	probeIter.Scan(&probeDomain)
-	if err := probeIter.Close(); err != nil {
-		if isUnconfiguredTableError(err, "reverse_ns_sharded") {
-			legacyDomains, legacyErr := fetchFromLegacyScylla(ctx, ns, offset, limit)
-			if legacyErr != nil {
-				if isUnconfiguredTableError(legacyErr, "reverse_ns") {
-					// Both schemas absent in this environment.
-					return []string{}, nil
-				}
-				return nil, legacyErr
-			}
-			return legacyDomains, nil
+	// Try multiple buckets for more robust probing since data distribution varies
+	var probeFound bool
+	for probeBucket := 0; probeBucket < 10; probeBucket++ {
+		probeIter := db.Session.Query(
+			"SELECT domain FROM reverse_ns_sharded WHERE ns = ? AND bucket = ? LIMIT 1",
+			ns,
+			probeBucket,
+		).Iter()
+		var probeDomain string
+		if probeIter.Scan(&probeDomain) {
+			probeFound = true
 		}
-		return nil, err
+		if err := probeIter.Close(); err != nil {
+			if isUnconfiguredTableError(err, "reverse_ns_sharded") {
+				legacyDomains, legacyErr := fetchFromLegacyScylla(ctx, ns, offset, limit)
+				if legacyErr != nil {
+					if isUnconfiguredTableError(legacyErr, "reverse_ns") {
+						// Both schemas absent in this environment.
+						return []string{}, nil
+					}
+					return nil, legacyErr
+				}
+				return legacyDomains, nil
+			}
+			return nil, err
+		}
+		if probeFound {
+			break
+		}
+	}
+
+	// FIX: If probe didn't find data in any bucket, fall back to legacy table
+	// This handles the case where data exists in reverse_ns but not in reverse_ns_sharded
+	if !probeFound {
+		legacyDomains, legacyErr := fetchFromLegacyScylla(ctx, ns, offset, limit)
+		if legacyErr != nil {
+			if isUnconfiguredTableError(legacyErr, "reverse_ns") {
+				// Both schemas absent or empty
+				return []string{}, nil
+			}
+			return nil, legacyErr
+		}
+		return legacyDomains, nil
 	}
 
 	// Parallel query across all buckets for the NS

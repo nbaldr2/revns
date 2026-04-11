@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -152,15 +153,11 @@ func fetchHostingProvidersFromTable(ctx context.Context, limit int) ([]models.Ho
 		return nil, err
 	}
 
-	// Sort by domain count (descending)
-	// We do this in memory since the dataset is manageable (typically < 1000 providers)
-	for i := 0; i < len(providers); i++ {
-		for j := i + 1; j < len(providers); j++ {
-			if providers[j].DomainCount > providers[i].DomainCount {
-				providers[i], providers[j] = providers[j], providers[i]
-			}
-		}
-	}
+	// Sort by domain count (descending) using efficient sort algorithm
+	// Replaced O(n²) bubble sort with O(n log n) sort
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].DomainCount > providers[j].DomainCount
+	})
 
 	// Cache the results
 	if data, err := json.Marshal(providers); err == nil {

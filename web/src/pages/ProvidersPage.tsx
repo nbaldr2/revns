@@ -1,9 +1,10 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { ArrowLeft, Building2, Globe, Loader2, AlertCircle, Search, X } from 'lucide-react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { ArrowLeft, Building2, Globe, Loader2, AlertCircle, Search, X, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getHostingProvidersPage } from '../api'
+import { getHostingProvidersPage, searchProviderDomain } from '../api'
 import ProviderNSModal from '../components/ProviderNSModal'
+import type { DomainNSMapping } from '../types'
 
 const PAGE_SIZE = 100
 
@@ -16,6 +17,15 @@ export default function ProvidersPage() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [loadingAll, setLoadingAll] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [fastSearchNS, setFastSearchNS] = useState('')
+  const [fastSearchEnabled, setFastSearchEnabled] = useState(false)
+
+  const fastSearchQuery = useQuery({
+    queryKey: ['fast-provider-search', fastSearchNS],
+    queryFn: ({ signal }) => searchProviderDomain(fastSearchNS, signal),
+    enabled: fastSearchEnabled && fastSearchNS.trim().length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const providersQuery = useInfiniteQuery({
     queryKey: ['hosting-providers-paged', PAGE_SIZE, 'v2'],
@@ -65,6 +75,13 @@ export default function ProvidersPage() {
     }
   }
 
+  // Generate the <pre> formatted results
+  const generateResultsPre = (domains: DomainNSMapping[]): string => {
+    if (domains.length === 0) return ''
+    const lines = domains.map((d) => `${d.domain} | ${d.nameserver}`)
+    return lines.join('\n')
+  }
+
   return (
     <div className="providers-page">
       <header className="providers-header">
@@ -99,6 +116,107 @@ export default function ProvidersPage() {
           <p className="provider-search-hint">
             Showing {formatNumber(filteredProviders.length)} of {formatNumber(providers.length)} loaded providers
           </p>
+        </div>
+
+        {/* Fast Provider Search */}
+        <div className="fast-search-section">
+          <div className="fast-search-header">
+            <Zap size={20} />
+            <h2>Fast Provider Search</h2>
+          </div>
+          <p className="fast-search-description">
+            Enter a provider domain (e.g., cloudflare.com) to find all domains using ANY nameserver ending with that provider domain
+          </p>
+          <div className="fast-search-input-group">
+            <input
+              type="text"
+              value={fastSearchNS}
+              onChange={(e) => setFastSearchNS(e.target.value)}
+              placeholder="Enter provider domain (e.g., cloudflare.com)"
+              className="fast-search-input"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && fastSearchNS.trim()) {
+                  setFastSearchEnabled(true)
+                  fastSearchQuery.refetch()
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="fast-search-button"
+              onClick={() => {
+                if (fastSearchNS.trim()) {
+                  setFastSearchEnabled(true)
+                  fastSearchQuery.refetch()
+                }
+              }}
+              disabled={!fastSearchNS.trim() || fastSearchQuery.isFetching}
+            >
+              {fastSearchQuery.isFetching ? (
+                <Loader2 size={16} className="spinner" />
+              ) : (
+                <Search size={16} />
+              )}
+              Search
+            </button>
+            {fastSearchEnabled && (
+              <button
+                type="button"
+                className="fast-search-clear"
+                onClick={() => {
+                  setFastSearchNS('')
+                  setFastSearchEnabled(false)
+                }}
+              >
+                <X size={16} />
+                Clear
+              </button>
+            )}
+            {fastSearchEnabled && fastSearchNS.trim() && (
+              <a
+                className="fast-search-download"
+                href={`/api/v1/provider-search.csv?domain=${encodeURIComponent(fastSearchNS.trim())}`}
+              >
+                Download CSV
+              </a>
+            )}
+          </div>
+
+          {/* Fast Search Results */}
+          {fastSearchEnabled && fastSearchQuery.data && (
+            <div className="fast-search-results">
+              <div className="fast-search-results-header">
+                <Globe size={18} />
+                <span>
+                  Found <strong>{formatNumber(fastSearchQuery.data.total)}</strong> domains using{' '}
+                  <strong>{fastSearchQuery.data.provider_domain}</strong> nameservers
+                </span>
+                <span className="fast-search-time">
+                  ({fastSearchQuery.data.response_time_ms}ms)
+                </span>
+              </div>
+              
+              {fastSearchQuery.data.domains.length > 0 ? (
+                <div className="fast-search-pre-container">
+                  <pre className="fast-search-pre">
+{`Found ${fastSearchQuery.data.total} domains using ${fastSearchQuery.data.provider_domain} nameservers.
+Showing ${formatNumber(fastSearchQuery.data.returned)} results (max 10,000). Download CSV for full list.
+
+${generateResultsPre(fastSearchQuery.data.domains)}`}
+                  </pre>
+                </div>
+              ) : (
+                <p className="fast-search-empty">No domains found for this provider.</p>
+              )}
+            </div>
+          )}
+
+          {fastSearchEnabled && fastSearchQuery.isError && (
+            <div className="fast-search-error">
+              <AlertCircle size={18} />
+              <span>Error: {(fastSearchQuery.error as Error).message}</span>
+            </div>
+          )}
         </div>
       </header>
 

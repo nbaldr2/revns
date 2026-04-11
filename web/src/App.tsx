@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Building2, ChevronLeft, ChevronRight, Copy, Database, Globe, Search, Server, Code, Loader2, Upload } from 'lucide-react'
+import { Activity, AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Server, Upload, X, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats } from './api'
+import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats, searchProviderDomain } from './api'
 import ProviderNSModal from './components/ProviderNSModal'
 import type { HostingProvider } from './types'
 
@@ -23,6 +23,8 @@ function App() {
   const [showRaw, setShowRaw] = useState(false)
   const [allCopied, setAllCopied] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
+  const [fastSearchDomain, setFastSearchDomain] = useState('')
+  const [fastSearchEnabled, setFastSearchEnabled] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -65,9 +67,10 @@ function App() {
   const topProvidersQuery = useQuery({
     queryKey: ['hosting-providers-top'],
     queryFn: ({ signal }) => getTopHostingProviders(signal),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    gcTime: 0,
+    retry: 3,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
   })
 
   const globalStatsQuery = useQuery({
@@ -76,6 +79,13 @@ function App() {
     staleTime: 2 * 60 * 1000,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
+  })
+
+  const fastSearchQuery = useQuery({
+    queryKey: ['fast-provider-search', fastSearchDomain],
+    queryFn: ({ signal }) => searchProviderDomain(fastSearchDomain, signal),
+    enabled: fastSearchEnabled && fastSearchDomain.trim().length > 0,
+    staleTime: 5 * 60 * 1000,
   })
 
   const totalPages = useMemo(() => {
@@ -114,8 +124,6 @@ function App() {
         </div>
       </section>
 
-       
- 
       <section className="stats-grid">
         {globalStatsQuery.data && (
           <>
@@ -175,12 +183,116 @@ function App() {
         )}
       </section>
 
+      <section className="panel fast-search-section">
+        <div className="panel-header">
+          <h2>
+            <Zap size={20} />
+            Fast Provider Search
+          </h2>
+        </div>
+        <p className="fast-search-description">
+          Enter a provider domain (e.g., cloudflare.com) to find all domains using ANY nameserver ending with that provider domain
+        </p>
+        <div className="fast-search-input-group">
+          <input
+            type="text"
+            value={fastSearchDomain}
+            onChange={(e) => setFastSearchDomain(e.target.value)}
+            placeholder="Enter provider domain (e.g., cloudflare.com)"
+            className="fast-search-input"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && fastSearchDomain.trim()) {
+                setFastSearchEnabled(true)
+              }
+            }}
+          />
+          <button
+            className="fast-search-btn"
+            onClick={() => setFastSearchEnabled(true)}
+            disabled={!fastSearchDomain.trim() || fastSearchQuery.isFetching}
+          >
+            {fastSearchQuery.isFetching ? <Loader2 size={18} className="spinner" /> : <Search size={18} />}
+            Search
+          </button>
+          {fastSearchEnabled && (
+            <button
+              className="fast-search-clear"
+              onClick={() => {
+                setFastSearchDomain('')
+                setFastSearchEnabled(false)
+              }}
+            >
+              <X size={18} />
+              Clear
+            </button>
+          )}
+          {fastSearchEnabled && fastSearchDomain.trim() && (
+            <a
+              className="fast-search-download"
+              href={`/api/v1/provider-search.csv?domain=${encodeURIComponent(fastSearchDomain.trim())}`}
+            >
+              Download CSV
+            </a>
+          )}
+        </div>
+
+        {fastSearchQuery.isLoading && (
+          <div className="fast-search-loading">
+            <Loader2 size={24} className="spinner" />
+            <span>Searching domains...</span>
+          </div>
+        )}
+
+        {fastSearchQuery.isError && (
+          <div className="fast-search-error">
+            <AlertCircle size={20} />
+            <span>{(fastSearchQuery.error as Error)?.message || 'Search failed'}</span>
+          </div>
+        )}
+
+        {fastSearchQuery.data && (
+          <div className="fast-search-results">
+            <div className="fast-search-summary">
+              <Globe size={18} />
+              <span>
+                Found <strong>{formatNumber(fastSearchQuery.data.total)}</strong> domains using{' '}
+                <strong>{fastSearchQuery.data.provider_domain}</strong> nameservers
+              </span>
+              <span className="fast-search-time">
+                ({fastSearchQuery.data.response_time_ms}ms)
+              </span>
+            </div>
+
+            {fastSearchQuery.data.domains.length > 0 ? (
+              <div className="fast-search-pre-container">
+                <pre className="fast-search-pre">
+{`Found ${fastSearchQuery.data.total} domains using ${fastSearchQuery.data.provider_domain} nameservers.
+Showing ${formatNumber(fastSearchQuery.data.returned)} results (max 10,000). Download CSV for full list.
+
+${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => `${d.domain} | ${d.nameserver}`).join('\n')}`}
+                </pre>
+              </div>
+            ) : (
+              <p className="fast-search-empty">No domains found for this provider.</p>
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="panel providers-section">
         <div className="panel-header">
           <h2>
             <Building2 size={20} />
             Top 10 Hosting Providers
           </h2>
+          <button 
+            className="refresh-button"
+            onClick={() => topProvidersQuery.refetch()}
+            disabled={topProvidersQuery.isFetching}
+            title="Refresh providers"
+          >
+            <RefreshCw size={16} className={topProvidersQuery.isFetching ? 'spin' : ''} />
+          </button>
         </div>
         
         {topProvidersQuery.isLoading && (
@@ -228,8 +340,23 @@ function App() {
           </>
         )}
 
-        {topProvidersQuery.data && topProvidersQuery.data.providers.length === 0 && (
-          <p className="message">No providers data available</p>
+        {(!topProvidersQuery.data || topProvidersQuery.data.providers.length === 0) && !topProvidersQuery.isLoading && (
+          <div className="no-data-message">
+            <p className="message">
+              {topProvidersQuery.isError 
+                ? (topProvidersQuery.error as Error)?.message || 'Failed to load providers'
+                : 'No providers data available'
+              }
+            </p>
+            <button 
+              className="retry-button"
+              onClick={() => topProvidersQuery.refetch()}
+              disabled={topProvidersQuery.isFetching}
+            >
+              <RefreshCw size={16} className={topProvidersQuery.isFetching ? 'spin' : ''} />
+              {topProvidersQuery.isFetching ? 'Loading...' : 'Retry'}
+            </button>
+          </div>
         )}
       </section>
 
@@ -291,7 +418,7 @@ function App() {
               }}
               disabled={allDomainsQuery.isFetching || !nameserver.trim()}
             >
-              {allDomainsQuery.isFetching && showRaw === false ? <Loader2 size={16} className="spinner" /> : <Code size={16} />}
+              {allDomainsQuery.isFetching && showRaw === false ? <Loader2 size={16} /> : <Code size={16} />}
               {allDomainsQuery.isFetching && showRaw === false ? 'Loading raw...' : 'Raw'}
             </button>
           </div>
@@ -324,7 +451,6 @@ function App() {
           <strong>{reverseQuery.data?.cached ? 'Hit / Shared' : 'Miss'}</strong>
         </article>
       </section>
- 
 
       <section className="panel">
         <div className="panel-header">
@@ -389,7 +515,7 @@ function App() {
         )}
 
         {showRaw && !allDomainsQuery.data && !allDomainsQuery.isFetching && (
-          <p className="message">No raw data loaded yet. Click &quot;Raw&quot; again to fetch.</p>
+          <p className="message">No raw data loaded yet. Click "Raw" again to fetch.</p>
         )}
       </section>
 
