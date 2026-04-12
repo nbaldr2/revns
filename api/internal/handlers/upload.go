@@ -557,12 +557,6 @@ func processBatchWorker(ctx context.Context, recordCh <-chan dbRecord, filename 
 			return
 		}
 
-		// Increment Redis counter for total rows uploaded
-		if err := cache.IncrementTotalRows(ctx, int64(len(batch))); err != nil {
-			// Log error but don't fail the upload
-			fmt.Printf("Warning: failed to increment row counter: %v\n", err)
-		}
-
 		// Aggregate provider stats in memory (fast) instead of per-record DB calls (slow)
 		aggState.mutex.Lock()
 		for _, r := range batch {

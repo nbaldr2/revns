@@ -237,23 +237,3 @@ func InvalidatePattern(ctx context.Context, pattern string) error {
 	}
 	return nil
 }
-
-// IncrementTotalRows increments the global row counter by the specified amount
-func IncrementTotalRows(ctx context.Context, count int64) error {
-	if Client == nil {
-		return fmt.Errorf("Redis client not initialized")
-	}
-	return Client.IncrBy(ctx, "stats:total_rows", count).Err()
-}
-
-// GetTotalRows retrieves the total number of rows uploaded
-func GetTotalRows(ctx context.Context) (int64, error) {
-	if Client == nil {
-		return 0, fmt.Errorf("Redis client not initialized")
-	}
-	val, err := Client.Get(ctx, "stats:total_rows").Int64()
-	if err == redis.Nil {
-		return 0, nil // Key doesn't exist yet
-	}
-	return val, err
-}

@@ -129,12 +129,6 @@ function App() {
           <>
             <article className="stat-card primary-stat">
               <div className="stat-title">
-                <Upload size={24} /> Rows Uploaded
-              </div>
-              <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_rows)}</strong>
-            </article>
-            <article className="stat-card primary-stat">
-              <div className="stat-title">
                 <Database size={24} /> Total Domains
               </div>
               <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_domains)}</strong>
@@ -155,12 +149,6 @@ function App() {
         )}
         {globalStatsQuery.isLoading && (
           <>
-            <article className="stat-card primary-stat loading">
-              <div className="stat-title">
-                <Loader2 size={24} className="spinner" /> Rows Uploaded
-              </div>
-              <strong className="stat-value pulse">Loading...</strong>
-            </article>
             <article className="stat-card primary-stat loading">
               <div className="stat-title">
                 <Loader2 size={24} className="spinner" /> Total Domains

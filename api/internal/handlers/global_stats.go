@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soufianerochdi/revns-api/internal/cache"
 	"github.com/soufianerochdi/revns-api/internal/db"
 )
 
@@ -14,7 +12,6 @@ type GlobalStatsResponse struct {
 	Providers       int64 `json:"providers"`
 	Nameservers     int64 `json:"nameservers"`
 	TotalDomains    int64 `json:"total_domains"`
-	TotalRows       int64 `json:"total_rows"`     // Raw rows uploaded (includes duplicates)
 	ResponseTimeMS  int64 `json:"response_time_ms"`
 }
 
@@ -42,18 +39,10 @@ func GetGlobalStats(c *gin.Context) {
 		return
 	}
 
-	// Get total rows from Redis cache (fast, avoids COUNT(*) timeout on 3.5M+ rows)
-	totalRows, err := cache.GetTotalRows(context.Background())
-	if err != nil {
-		// Don't fail if Redis error, just return 0
-		totalRows = 0
-	}
-
 	c.JSON(http.StatusOK, GlobalStatsResponse{
 		Providers:      providersCount,
 		Nameservers:    nsCount,
 		TotalDomains:   totalDomains,
-		TotalRows:      totalRows,
 		ResponseTimeMS: time.Since(start).Milliseconds(),
 	})
 }

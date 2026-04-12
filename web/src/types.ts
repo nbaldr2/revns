@@ -81,7 +81,6 @@ export interface GlobalStatsResponse {
   providers: number
   nameservers: number
   total_domains: number
-  total_rows: number      // Raw rows uploaded (includes duplicates)
   response_time_ms: number
 }
 
