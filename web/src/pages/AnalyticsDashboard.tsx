@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { Activity, TrendingUp, Globe, Server, Users, Calendar } from 'lucide-react'
+import { Activity, Server, Users, Calendar } from 'lucide-react'
 
 import type { AnalyticsSummary, DashboardAnalytics } from '../types'
 

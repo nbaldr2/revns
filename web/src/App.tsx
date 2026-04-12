@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Server, Upload, X, Zap } from 'lucide-react'
+import { AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Upload, X, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats, searchProviderDomain } from './api'
+import { getAllDomains, getReverseNS, getTopHostingProviders, searchProviderDomain } from './api'
 import ProviderNSModal from './components/ProviderNSModal'
 import type { HostingProvider } from './types'
 
@@ -71,14 +71,6 @@ function App() {
     gcTime: 0,
     retry: 3,
     refetchOnMount: true,
-  })
-
-  const globalStatsQuery = useQuery({
-    queryKey: ['global-stats'],
-    queryFn: ({ signal }) => getGlobalStats(signal),
-    staleTime: 2 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
   })
 
   const fastSearchQuery = useQuery({
