@@ -19,6 +19,11 @@ type GlobalStatsResponse struct {
 func GetGlobalStats(c *gin.Context) {
 	start := time.Now()
 
+	if db.Session == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database session is not initialized"})
+		return
+	}
+
 	providersCount, err := countTable("provider_stats")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -48,6 +53,9 @@ func GetGlobalStats(c *gin.Context) {
 }
 
 func countTable(table string) (int64, error) {
+	if db.Session == nil {
+		return 0, http.ErrServerClosed // or any appropriate error, handled above
+	}
 	var count int64
 	if err := db.Session.Query("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
 		return 0, err
