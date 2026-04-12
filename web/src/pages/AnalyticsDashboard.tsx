@@ -45,10 +45,6 @@ export default function AnalyticsDashboard() {
     return new Intl.NumberFormat().format(value)
   }
 
-  const formatPercentage = (value: number): string => {
-    return `${value.toFixed(1)}%`
-  }
-
   const formatChartDate = (timestamp: number): string => {
     return new Date(timestamp).toLocaleDateString()
   }
