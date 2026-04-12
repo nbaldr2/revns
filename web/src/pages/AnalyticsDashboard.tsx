@@ -81,58 +81,6 @@ export default function AnalyticsDashboard() {
         </div>
       ) : (
         <>
-          {/* Summary Cards */}
-          {summary && (
-            <section className="summary-cards">
-              <div className="stat-card">
-                <div className="stat-icon blue">
-                  <Globe size={24} />
-                </div>
-                <div className="stat-content">
-                  <h3>Total Domains</h3>
-                  <p className="stat-value">{formatNumber(summary.CurrentStats.TotalDomains)}</p>
-                  <p className="stat-change positive">
-                    +{formatNumber(summary.Growth.DomainGrowth)} ({formatPercentage(summary.Growth.DomainGrowthPct)})
-                  </p>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-icon green">
-                  <Users size={24} />
-                </div>
-                <div className="stat-content">
-                  <h3>Total Providers</h3>
-                  <p className="stat-value">{formatNumber(summary.CurrentStats.TotalProviders)}</p>
-                  <p className="stat-change positive">
-                    +{formatNumber(summary.Growth.ProviderGrowth)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-icon purple">
-                  <Server size={24} />
-                </div>
-                <div className="stat-content">
-                  <h3>Data Points</h3>
-                  <p className="stat-value">{formatNumber(summary.CurrentStats.DataPoints)}</p>
-                  <p className="stat-description">Days tracked</p>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-icon orange">
-                  <TrendingUp size={24} />
-                </div>
-                <div className="stat-content">
-                  <h3>Growth Rate</h3>
-                  <p className="stat-value">{formatPercentage(summary.Growth.DomainGrowthPct)}</p>
-                  <p className="stat-description">Domain growth rate</p>
-                </div>
-              </div>
-            </section>
-          )}
 
           {/* Charts Section */}
           {dashboard && dashboard.DailyStats.length > 0 && (
@@ -153,7 +101,7 @@ export default function AnalyticsDashboard() {
                     />
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip 
-                      labelFormatter={formatChartDate}
+                      labelFormatter={(label: any) => formatChartDate(Number(label))}
                       formatter={(value: any) => [formatNumber(Number(value)), "Domains"]}
                     />
                     <Legend />
