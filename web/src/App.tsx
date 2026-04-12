@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Upload, X, Zap } from 'lucide-react'
+import { Activity, AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Server, Upload, X, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { getAllDomains, getReverseNS, getTopHostingProviders, searchProviderDomain } from './api'
+import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats, searchProviderDomain } from './api'
 import ProviderNSModal from './components/ProviderNSModal'
 import type { HostingProvider } from './types'
 
@@ -73,6 +73,14 @@ function App() {
     refetchOnMount: true,
   })
 
+  const globalStatsQuery = useQuery({
+    queryKey: ['global-stats'],
+    queryFn: ({ signal }) => getGlobalStats(signal),
+    staleTime: 2 * 60 * 1000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  })
+
   const fastSearchQuery = useQuery({
     queryKey: ['fast-provider-search', fastSearchDomain],
     queryFn: ({ signal }) => searchProviderDomain(fastSearchDomain, signal),
@@ -116,6 +124,64 @@ function App() {
         </div>
       </section>
 
+      <section className="stats-grid">
+        {globalStatsQuery.data && (
+          <>
+            <article className="stat-card primary-stat">
+              <div className="stat-title">
+                <Upload size={24} /> Rows Uploaded
+              </div>
+              <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_rows)}</strong>
+            </article>
+            <article className="stat-card primary-stat">
+              <div className="stat-title">
+                <Database size={24} /> Total Domains
+              </div>
+              <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_domains)}</strong>
+            </article>
+            <article className="stat-card primary-stat">
+              <div className="stat-title">
+                <Server size={24} /> Providers
+              </div>
+              <strong className="stat-value">{formatNumber(globalStatsQuery.data.providers)}</strong>
+            </article>
+            <article className="stat-card primary-stat">
+              <div className="stat-title">
+                <Globe size={24} /> Nameservers
+              </div>
+              <strong className="stat-value">{formatNumber(globalStatsQuery.data.nameservers)}</strong>
+            </article>
+          </>
+        )}
+        {globalStatsQuery.isLoading && (
+          <>
+            <article className="stat-card primary-stat loading">
+              <div className="stat-title">
+                <Loader2 size={24} className="spinner" /> Rows Uploaded
+              </div>
+              <strong className="stat-value pulse">Loading...</strong>
+            </article>
+            <article className="stat-card primary-stat loading">
+              <div className="stat-title">
+                <Loader2 size={24} className="spinner" /> Total Domains
+              </div>
+              <strong className="stat-value pulse">Loading...</strong>
+            </article>
+            <article className="stat-card primary-stat loading">
+              <div className="stat-title">
+                <Loader2 size={24} className="spinner" /> Providers
+              </div>
+              <strong className="stat-value pulse">Loading...</strong>
+            </article>
+            <article className="stat-card primary-stat loading">
+              <div className="stat-title">
+                <Loader2 size={24} className="spinner" /> Nameservers
+              </div>
+              <strong className="stat-value pulse">Loading...</strong>
+            </article>
+          </>
+        )}
+      </section>
 
       <section className="panel fast-search-section">
         <div className="panel-header">
@@ -359,6 +425,32 @@ ${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => 
         </form>
       </section>
 
+      <section className="stats-grid">
+        <article className="stat-card">
+          <div className="stat-title">
+            <Server size={16} /> Nameserver
+          </div>
+          <strong>{reverseQuery.data?.nameserver ?? nameserver}</strong>
+        </article>
+        <article className="stat-card">
+          <div className="stat-title">
+            <Database size={16} /> Total Domains
+          </div>
+          <strong>{formatNumber(reverseQuery.data?.total ?? 0)}</strong>
+        </article>
+        <article className="stat-card">
+          <div className="stat-title">
+            <Activity size={16} /> Response Time
+          </div>
+          <strong>{reverseQuery.data?.response_time_ms ?? 0} ms</strong>
+        </article>
+        <article className="stat-card">
+          <div className="stat-title">
+            <Database size={16} /> Cache
+          </div>
+          <strong>{reverseQuery.data?.cached ? 'Hit / Shared' : 'Miss'}</strong>
+        </article>
+      </section>
 
       <section className="panel">
         <div className="panel-header">
