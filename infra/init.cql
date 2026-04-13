@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS ingestion_progress (
 -- ============================================
 
 -- Secondary index for provider lookup in provider_ns (reverse queries)
-CREATE INDEX IF NOT EXISTS idx_provider_ns_provider ON provider_ns (provider);
+-- Removed because provider is the partition key, so an index is invalid and unnecessary
 
 -- Secondary index for domain lookup in provider_domains
 CREATE INDEX IF NOT EXISTS idx_provider_domains_ns ON provider_domains (ns);
