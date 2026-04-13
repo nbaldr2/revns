@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soufianerochdi/revns-api/internal/cache"
 	"github.com/soufianerochdi/revns-api/internal/db"
 )
 
