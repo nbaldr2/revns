@@ -20,7 +20,7 @@ import (
 var providerGroup singleflight.Group
 
 const (
-	providerCacheTTL     = 10 * time.Minute
+	providerCacheTTL     = 30 * time.Minute // Increased for millions of records
 	defaultProviderLimit = 100
 	maxProviderLimit     = 500
 )
@@ -30,8 +30,12 @@ func GetTopHostingProviders(c *gin.Context) {
 	start := time.Now()
 	limit := 10 // Top 10 by default
 
+	// Add timeout to prevent hanging requests
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
 	result, err, shared := providerGroup.Do("top:10", func() (interface{}, error) {
-		return fetchHostingProvidersFromTable(c.Request.Context(), limit)
+		return fetchHostingProvidersFromTable(ctx, limit)
 	})
 
 	if err != nil {
@@ -61,9 +65,13 @@ func GetAllHostingProviders(c *gin.Context) {
 		limit = defaultProviderLimit
 	}
 
+	// Add timeout to prevent hanging requests
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
 	// Use a consistent cache key for all providers (no limit)
 	result, err, shared := providerGroup.Do("all:providers", func() (interface{}, error) {
-		return fetchHostingProvidersPaged(c.Request.Context(), 0)
+		return fetchHostingProvidersPaged(ctx, 0)
 	})
 
 	if err != nil {

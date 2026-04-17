@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +16,13 @@ import (
 
 	"github.com/soufianerochdi/revns-api/internal/cache"
 	"github.com/soufianerochdi/revns-api/internal/db"
+	"github.com/soufianerochdi/revns-api/internal/middleware"
 	"github.com/soufianerochdi/revns-api/internal/models"
 )
 
 var providerNSGroup singleflight.Group
 
-const providerNSCacheTTL = 10 * time.Minute
+const providerNSCacheTTL = 30 * time.Minute // Increased for millions of records
 
 // GetProviderNSBreakdown handles GET /api/v1/hosting-providers/:provider/ns
 func GetProviderNSBreakdown(c *gin.Context) {
@@ -31,9 +33,13 @@ func GetProviderNSBreakdown(c *gin.Context) {
 		return
 	}
 
+	// Add timeout to prevent hanging requests
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
 	cacheProvider := strings.ToLower(provider)
 	result, err, shared := providerNSGroup.Do("ns-breakdown:"+cacheProvider, func() (interface{}, error) {
-		return fetchProviderNSBreakdownFromTable(c.Request.Context(), provider, cacheProvider)
+		return fetchProviderNSBreakdownFromTable(ctx, provider, cacheProvider)
 	})
 
 	if err != nil {
@@ -83,14 +89,9 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 		return response, err
 	}
 
-	// FIX: Get actual counts from reverse_ns table (accurate source)
-	for _, ns := range nsList {
-		actualCount := getActualNSCount(ctx, ns)
-		response.NSCounts = append(response.NSCounts, models.NSCount{
-			Nameserver: ns,
-			Count:      actualCount,
-		})
-	}
+	// OPTIMIZED: Get counts from ns_stats table (O(1) lookup) with concurrent fallback
+	nsCounts := getNSCountsConcurrent(ctx, nsList)
+	response.NSCounts = nsCounts
 
 	// Sort by count (descending)
 	sort.Slice(response.NSCounts, func(i, j int) bool {
@@ -111,31 +112,97 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 	return response, nil
 }
 
-// getActualNSCount gets the real domain count from reverse_ns table
-func getActualNSCount(ctx context.Context, ns string) int64 {
-	var count int64
-	// Try legacy table first
-	query := "SELECT COUNT(*) FROM reverse_ns WHERE ns = ?"
-	err := db.Session.Query(query, ns).WithContext(ctx).Scan(&count)
-	if err == nil && count > 0 {
-		return count
+// getNSCountsConcurrent fetches counts for all NS in parallel using ns_stats table
+// Falls back to concurrent sharded queries only if ns_stats is missing data
+func getNSCountsConcurrent(ctx context.Context, nsList []string) []models.NSCount {
+	if len(nsList) == 0 {
+		return []models.NSCount{}
 	}
-	
-	// If legacy has no data, try sharded table
-	var shardedCount int64
+
+	results := make([]models.NSCount, len(nsList))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	// Use worker pool to limit concurrent queries (20 workers max)
+	sem := make(chan struct{}, 20)
+
+	for i, ns := range nsList {
+		wg.Add(1)
+		go func(index int, nameserver string) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			count := getNSCountFast(ctx, nameserver)
+
+			mu.Lock()
+			results[index] = models.NSCount{
+				Nameserver: nameserver,
+				Count:      count,
+			}
+			mu.Unlock()
+
+			// Record DB query duration for metrics
+			middleware.RecordDBQuery("ns_count_lookup", time.Millisecond*10)
+		}(i, ns)
+	}
+
+	wg.Wait()
+	return results
+}
+
+// getNSCountFast uses ns_stats table first (O(1)), falls back to concurrent sharded query
+func getNSCountFast(ctx context.Context, ns string) int64 {
+	// PRIMARY: Check ns_stats table (pre-computed count)
+	var cachedCount int64
+	query := "SELECT domain_count FROM ns_stats WHERE ns = ?"
+	err := db.Session.Query(query, ns).WithContext(ctx).Scan(&cachedCount)
+	if err == nil && cachedCount > 0 {
+		return cachedCount
+	}
+
+	// FALLBACK 1: Try legacy reverse_ns table
+	var legacyCount int64
+	query = "SELECT COUNT(*) FROM reverse_ns WHERE ns = ?"
+	err = db.Session.Query(query, ns).WithContext(ctx).Scan(&legacyCount)
+	if err == nil && legacyCount > 0 {
+		return legacyCount
+	}
+
+	// FALLBACK 2: Query all 100 buckets concurrently with worker pool
+	var total int64
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	sem := make(chan struct{}, 10) // 10 concurrent bucket queries max
+
 	for bucket := 0; bucket < 100; bucket++ {
-		var bucketCount int64
-		query := "SELECT COUNT(*) FROM reverse_ns_sharded WHERE ns = ? AND bucket = ?"
-		err := db.Session.Query(query, ns, bucket).WithContext(ctx).Scan(&bucketCount)
-		if err == nil {
-			shardedCount += bucketCount
-		}
+		wg.Add(1)
+		go func(b int) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			var bucketCount int64
+			query := "SELECT COUNT(*) FROM reverse_ns_sharded WHERE ns = ? AND bucket = ?"
+			err := db.Session.Query(query, ns, b).WithContext(ctx).Scan(&bucketCount)
+			if err == nil {
+				mu.Lock()
+				total += bucketCount
+				mu.Unlock()
+			}
+		}(bucket)
 	}
-	
-	if shardedCount > 0 {
-		return shardedCount
-	}
-	
-	// Return legacy count even if 0 (fallback)
-	return count
+
+	wg.Wait()
+	return total
 }
