@@ -291,9 +291,9 @@ func checkDatabaseHealth(ctx context.Context) map[string]interface{} {
 
 		// Execute a simple query to verify connectivity
 		err := scyllaCB.Execute(ctx, func() error {
-			var count int
+			var key string
 			// Use a fast metadata query instead of table scan
-			return db.Session.Query("SELECT now() FROM system.local").Scan(&count)
+			return db.Session.Query("SELECT key FROM system.local").Scan(&key)
 		})
 
 		if err != nil {
