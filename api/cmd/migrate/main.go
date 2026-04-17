@@ -68,8 +68,6 @@ func main() {
 	}
 
 	// Run migrations based on flags
-	ctx := context.Background()
-
 	if config.OnlyStats {
 		log.Println("📊 Mode: Computing accurate stats only")
 		if err := computeAccurateStats(ctx, config); err != nil {
