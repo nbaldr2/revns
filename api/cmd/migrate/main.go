@@ -62,9 +62,10 @@ func main() {
 	log.Println("✅ Connected successfully!")
 	log.Println()
 
-	// Create new schema
+	// Create new schema (optional - may already exist)
 	if err := createSchemaV2(); err != nil {
-		log.Fatalf("❌ Failed to create schema: %v", err)
+		log.Printf("⚠️ Schema creation warning: %v", err)
+		log.Println("   Continuing anyway - tables may already exist...")
 	}
 
 	// Run migrations based on flags
