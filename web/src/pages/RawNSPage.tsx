@@ -3,6 +3,7 @@ import { ArrowLeft, Copy, Database, Loader2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getAllDomains } from '../api'
+import { copyToClipboard } from '../utils/clipboard'
 
 export default function RawNSPage() {
   const navigate = useNavigate()
@@ -54,9 +55,11 @@ export default function RawNSPage() {
               type="button"
               className="copy-all-button"
               onClick={async () => {
-                await navigator.clipboard.writeText(rawText)
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1200)
+                const success = await copyToClipboard(rawText)
+                if (success) {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1200)
+                }
               }}
               disabled={!rawText}
             >

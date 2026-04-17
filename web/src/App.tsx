@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats, searchProviderDomain } from './api'
 import ProviderNSModal from './components/ProviderNSModal'
 import type { HostingProvider } from './types'
+import { copyToClipboard } from './utils/clipboard'
 
 const DEFAULT_NS = ''
 
@@ -105,9 +106,11 @@ function App() {
   }
 
   const copyDomain = async (domain: string) => {
-    await navigator.clipboard.writeText(domain)
-    setCopied(domain)
-    setTimeout(() => setCopied(null), 1200)
+    const success = await copyToClipboard(domain)
+    if (success) {
+      setCopied(domain)
+      setTimeout(() => setCopied(null), 1200)
+    }
   }
 
   return (
@@ -461,9 +464,11 @@ ${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => 
               type="button"
               className="copy-all-button"
               onClick={async () => {
-                await navigator.clipboard.writeText(allDomainsQuery.data.domains.join('\n'))
-                setAllCopied(true)
-                setTimeout(() => setAllCopied(false), 1200)
+                const success = await copyToClipboard(allDomainsQuery.data.domains.join('\n'))
+                if (success) {
+                  setAllCopied(true)
+                  setTimeout(() => setAllCopied(false), 1200)
+                }
               }}
             >
               <Copy size={14} /> {allCopied ? 'Copied!' : 'Copy'}
