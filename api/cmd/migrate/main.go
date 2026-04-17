@@ -51,7 +51,10 @@ func main() {
 
 	// Initialize database connection
 	log.Println("🔌 Connecting to ScyllaDB...")
-	if err := db.Initialize(); err != nil {
+	ctx := context.Background()
+	hosts := []string{"scylla:9042"} // Docker network hostname
+	keyspace := "domain_data"
+	if err := db.Initialize(ctx, hosts, keyspace); err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
 	defer db.Session.Close()
