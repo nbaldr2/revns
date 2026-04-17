@@ -54,8 +54,8 @@ func GetProviderNSBreakdown(c *gin.Context) {
 	c.JSON(http.StatusOK, breakdown)
 }
 
-// fetchProviderNSBreakdownFromTable reads from provider_ns table but verifies counts from reverse_ns
-// This ensures accurate counts even when provider_ns has stale data
+// fetchProviderNSBreakdownFromTable reads from provider_ns table with pre-computed counts
+// ULTRA-OPTIMIZED: Single query gets all NS + counts, no extra lookups needed
 func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvider string) (models.ProviderNSBreakdownResponse, error) {
 	response := models.ProviderNSBreakdownResponse{
 		Provider: provider,
@@ -75,23 +75,28 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 		return response, err
 	}
 
-	// Get list of nameservers from provider_ns table
-	query := "SELECT ns FROM provider_ns WHERE provider = ?"
-	iter := db.Session.Query(query, provider).Iter()
+	// ULTRA-OPTIMIZED: Get NS + domain_count in ONE query from provider_ns table
+	// This uses pre-computed counts from ingestion time - no need for extra lookups
+	query := "SELECT ns, domain_count FROM provider_ns WHERE provider = ?"
+	iter := db.Session.Query(query, provider).WithContext(ctx).Iter()
 
-	var nsList []string
 	var ns string
-	for iter.Scan(&ns) {
-		nsList = append(nsList, ns)
+	var domainCount int64
+	for iter.Scan(&ns, &domainCount) {
+		// Skip if domain_count is missing or 0, try to get from ns_stats as fallback
+		if domainCount == 0 {
+			domainCount = getNSCountFromStats(ctx, ns)
+		}
+		response.NSCounts = append(response.NSCounts, models.NSCount{
+			Nameserver: ns,
+			Count:      domainCount,
+		})
+		response.TotalDomains += domainCount
 	}
 
 	if err := iter.Close(); err != nil {
 		return response, err
 	}
-
-	// OPTIMIZED: Get counts from ns_stats table (O(1) lookup) with concurrent fallback
-	nsCounts := getNSCountsConcurrent(ctx, nsList)
-	response.NSCounts = nsCounts
 
 	// Sort by count (descending)
 	sort.Slice(response.NSCounts, func(i, j int) bool {
@@ -99,10 +104,6 @@ func fetchProviderNSBreakdownFromTable(ctx context.Context, provider, cacheProvi
 	})
 
 	response.TotalNS = int64(len(response.NSCounts))
-	response.TotalDomains = 0
-	for _, ns := range response.NSCounts {
-		response.TotalDomains += ns.Count
-	}
 
 	// Cache the results
 	if data, marshalErr := json.Marshal(response); marshalErr == nil {
@@ -205,4 +206,15 @@ func getNSCountFast(ctx context.Context, ns string) int64 {
 
 	wg.Wait()
 	return total
+}
+
+// getNSCountFromStats is a lightweight fallback that only checks ns_stats table
+func getNSCountFromStats(ctx context.Context, ns string) int64 {
+	var count int64
+	query := "SELECT domain_count FROM ns_stats WHERE ns = ?"
+	err := db.Session.Query(query, ns).WithContext(ctx).Scan(&count)
+	if err == nil {
+		return count
+	}
+	return 0
 }
