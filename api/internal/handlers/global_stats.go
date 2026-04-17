@@ -92,8 +92,8 @@ func getAccurateStats() (*GlobalStatsResponse, error) {
 	var response GlobalStatsResponse
 	var found bool
 
-	// Get each stat individually
-	_ = stat // Use the type to avoid unused variable warning
+	// Get each stat individually from global_stats_v2 table
+	// The table has columns: stat_name, stat_value, last_computed, computation_method
 	
 	// Total records
 	iter := db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'total_domain_records'").Iter()
