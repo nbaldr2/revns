@@ -80,8 +80,10 @@ export interface UploadErrorsResponse {
 export interface GlobalStatsResponse {
   providers: number
   nameservers: number
-  total_domains: number
+  total_records: number      // Total domain-provider associations (13M+)
+  unique_domains: number     // Actual unique domains
   response_time_ms: number
+  data_source: string       // 'computed_v2', 'live', or 'cached'
 }
 
 // Analytics types

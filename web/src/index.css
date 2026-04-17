@@ -149,6 +149,14 @@ button:disabled {
   line-height: 1.2;
 }
 
+.stat-card.primary-stat .stat-subtitle {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+  font-weight: 400;
+}
+
 /* Loading state for primary stats */
 .stat-card.primary-stat.loading {
   opacity: 0.7;

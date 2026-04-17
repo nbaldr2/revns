@@ -132,9 +132,21 @@ function App() {
           <>
             <article className="stat-card primary-stat">
               <div className="stat-title">
-                <Database size={24} /> Total Domains
+                <Database size={24} /> Total Records
               </div>
-              <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_domains)}</strong>
+              <strong className="stat-value">{formatNumber(globalStatsQuery.data.total_records)}</strong>
+              <small className="stat-subtitle">Domain-Provider associations</small>
+            </article>
+            <article className="stat-card primary-stat">
+              <div className="stat-title">
+                <Database size={24} /> Unique Domains
+              </div>
+              <strong className="stat-value">
+                {globalStatsQuery.data.unique_domains > 0 
+                  ? formatNumber(globalStatsQuery.data.unique_domains)
+                  : 'Computing...'}
+              </strong>
+              <small className="stat-subtitle">Actual unique domains</small>
             </article>
             <article className="stat-card primary-stat">
               <div className="stat-title">
