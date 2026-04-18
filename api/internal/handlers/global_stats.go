@@ -51,34 +51,27 @@ func GetGlobalStats(c *gin.Context) {
 		return
 	}
 
-	// Fallback to live counting
-	providersCount, err := countTable("provider_stats")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	nsCount, err := countTable("provider_ns")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Get total records (sum from provider_stats)
-	var totalRecords int64
-	if err := db.Session.Query("SELECT sum(domain_count) FROM provider_stats").Scan(&totalRecords); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Get unique domains from pre-computed global_stats_v2 (fast, no timeout)
-	var uniqueDomains int64
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Use pre-computed stats with 5 second timeout for fast response
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	
-	// Try pre-computed stats first (fast O(1) lookup)
-	if err := db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'unique_domains'").WithContext(ctx).Scan(&uniqueDomains); err != nil {
-		uniqueDomains = 0 // Not computed yet
+	var providersCount, nsCount, totalRecords, uniqueDomains int64
+	
+	// Get from global_stats_v2 (pre-computed, O(1) lookup)
+	db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'providers'").WithContext(ctx).Scan(&providersCount)
+	db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'nameservers'").WithContext(ctx).Scan(&nsCount)
+	db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'total_domain_records'").WithContext(ctx).Scan(&totalRecords)
+	db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'unique_domains'").WithContext(ctx).Scan(&uniqueDomains)
+	
+	// Fallback to live counting if pre-computed stats are missing
+	if providersCount == 0 {
+		providersCount, _ = countTable("provider_stats")
+	}
+	if nsCount == 0 {
+		nsCount, _ = countTable("provider_ns")
+	}
+	if totalRecords == 0 {
+		db.Session.Query("SELECT sum(domain_count) FROM provider_stats").Scan(&totalRecords)
 	}
 
 	c.JSON(http.StatusOK, GlobalStatsResponse{
