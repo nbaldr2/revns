@@ -70,11 +70,14 @@ func GetGlobalStats(c *gin.Context) {
 		return
 	}
 
-	// Try to get unique domains count from domain_metadata_v2
+	// Get unique domains from pre-computed global_stats_v2 (fast, no timeout)
 	var uniqueDomains int64
-	if err := db.Session.Query("SELECT count(*) FROM domain_metadata_v2").Scan(&uniqueDomains); err != nil {
-		// If metadata_v2 is not populated yet, use total_records as fallback
-		uniqueDomains = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	// Try pre-computed stats first (fast O(1) lookup)
+	if err := db.Session.Query("SELECT stat_value FROM global_stats_v2 WHERE stat_name = 'unique_domains'").WithContext(ctx).Scan(&uniqueDomains); err != nil {
+		uniqueDomains = 0 // Not computed yet
 	}
 
 	c.JSON(http.StatusOK, GlobalStatsResponse{
@@ -83,7 +86,7 @@ func GetGlobalStats(c *gin.Context) {
 		TotalRecords:   totalRecords,
 		UniqueDomains:  uniqueDomains,
 		ResponseTimeMS: time.Since(start).Milliseconds(),
-		DataSource:     "live",
+		DataSource:     "live_fast",
 	})
 }
 
