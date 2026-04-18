@@ -10,7 +10,10 @@ import { copyToClipboard } from './utils/clipboard'
 
 const DEFAULT_NS = ''
 
-function formatNumber(value: number) {
+function formatNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || isNaN(value)) {
+    return '0'
+  }
   return new Intl.NumberFormat().format(value)
 }
 
@@ -142,7 +145,7 @@ function App() {
                 <Database size={24} /> Unique Domains
               </div>
               <strong className="stat-value">
-                {globalStatsQuery.data.unique_domains > 0 
+                {globalStatsQuery.data.unique_domains && globalStatsQuery.data.unique_domains > 0 
                   ? formatNumber(globalStatsQuery.data.unique_domains)
                   : 'Computing...'}
               </strong>
