@@ -218,7 +218,7 @@ func main() {
 		Addr:         ":8080",
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // No timeout for large file downloads
 		IdleTimeout:  60 * time.Second,
 	}
 
