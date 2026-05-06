@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Server, Upload, X, Zap } from 'lucide-react'
+import { Activity, AlertCircle, Building2, ChevronLeft, ChevronRight, Code, Copy, Database, Globe, Loader2, RefreshCw, Search, Server, Upload, X, Zap, Download } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getAllDomains, getReverseNS, getTopHostingProviders, getGlobalStats, searchProviderDomain } from './api'
 import ProviderNSModal from './components/ProviderNSModal'
+import TopProvidersChart from './components/TopProvidersChart'
 import type { HostingProvider } from './types'
 import { copyToClipboard } from './utils/clipboard'
+import { formatNumber } from './utils/format'
 
 const DEFAULT_NS = ''
-
-function formatNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '0'
-  }
-  return new Intl.NumberFormat().format(value)
-}
 
 function App() {
   const navigate = useNavigate()
@@ -29,6 +24,19 @@ function App() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [fastSearchDomain, setFastSearchDomain] = useState('')
   const [fastSearchEnabled, setFastSearchEnabled] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('recent_ns_searches')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Save to local storage whenever recentSearches change
+  useEffect(() => {
+    localStorage.setItem('recent_ns_searches', JSON.stringify(recentSearches))
+  }, [recentSearches])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -106,6 +114,11 @@ function App() {
     if (!trimmed) return
     setPage(1)
     setNameserver(trimmed)
+    
+    setRecentSearches(prev => {
+      const updated = [trimmed, ...prev.filter(item => item !== trimmed)].slice(0, 5)
+      return updated
+    })
   }
 
   const copyDomain = async (domain: string) => {
@@ -319,6 +332,7 @@ ${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => 
 
         {topProvidersQuery.data && topProvidersQuery.data.providers.length > 0 && (
           <>
+            <TopProvidersChart data={topProvidersQuery.data.providers} />
             <div className="providers-list">
               {topProvidersQuery.data.providers.map((provider: HostingProvider, index: number) => (
                 <button
@@ -383,6 +397,35 @@ ${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => 
             </button>
           </div>
 
+          {recentSearches.length > 0 && (
+            <div className="recent-searches" style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Recent:</span>
+              {recentSearches.map(ns => (
+                <button
+                  key={ns}
+                  type="button"
+                  className="recent-search-pill"
+                  onClick={() => {
+                    setInput(ns)
+                    setNameserver(ns)
+                    setPage(1)
+                  }}
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                    borderRadius: '99px',
+                    padding: '0.2rem 0.6rem',
+                    fontSize: '0.8rem',
+                    color: '#93c5fd',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {ns}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="controls-row">
             <label htmlFor="limit">Limit</label>
             <select
@@ -424,8 +467,35 @@ ${fastSearchQuery.data.domains.map((d: {domain: string, nameserver: string}) => 
               }}
               disabled={allDomainsQuery.isFetching || !nameserver.trim()}
             >
-              {allDomainsQuery.isFetching && showRaw === false ? <Loader2 size={16} /> : <Code size={16} />}
+              {allDomainsQuery.isFetching && showRaw === false ? <Loader2 size={16} className="spinner" /> : <Code size={16} />}
               {allDomainsQuery.isFetching && showRaw === false ? 'Loading raw...' : 'Raw'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={async () => {
+                if (!nameserver.trim()) return;
+                let data = allDomainsQuery.data;
+                if (!data) {
+                  const res = await allDomainsQuery.refetch();
+                  data = res.data;
+                }
+                if (data && data.domains.length > 0) {
+                  const csvContent = "domain\n" + data.domains.join("\n");
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.setAttribute("href", url);
+                  link.setAttribute("download", `ns_${nameserver.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }
+              }}
+              disabled={allDomainsQuery.isFetching || !nameserver.trim()}
+            >
+              <Download size={16} />
+              Export CSV
             </button>
           </div>
         </form>

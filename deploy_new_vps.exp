@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+set timeout 600
+set user "root"
+set password {Y-Sah7=D/NbF9r)1}
+set host "37.114.35.146"
+
+# Step 1: Install Docker if not present
+spawn ssh -o StrictHostKeyChecking=no $user@$host "command -v docker || (curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sh /tmp/get-docker.sh)"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof
+}
+
+# Step 2: Install standalone docker-compose (v1 compatibility)
+spawn ssh -o StrictHostKeyChecking=no $user@$host "command -v docker-compose || (curl -L 'https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-Linux-x86_64' -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose)"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof
+}
+
+# Step 3: Clone or update the repo and deploy
+spawn ssh -o StrictHostKeyChecking=no $user@$host "if \[ -d /root/revns \]; then cd /root/revns && git pull; else cd /root && git clone https://github.com/nbaldr2/revns.git && cd revns; fi && cp -n .env.example .env && docker-compose -f docker-compose.prod.yml down 2>/dev/null; docker-compose -f docker-compose.prod.yml build --no-cache && docker-compose -f docker-compose.prod.yml up -d scylla redis && sleep 30 && until docker exec revns-scylla cqlsh -e 'DESCRIBE KEYSPACES' >/dev/null 2>&1; do echo 'Waiting for ScyllaDB...'; sleep 5; done && echo 'ScyllaDB ready!' && docker-compose -f docker-compose.prod.yml up -d api web && sleep 10 && echo 'Deployment complete!'"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof
+}

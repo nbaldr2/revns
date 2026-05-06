@@ -1,28 +1,30 @@
 version: '3.8'
 
 services:
-  # ScyllaDB - Distributed NoSQL database
+  # Cassandra - Distributed NoSQL database (ScyllaDB replacement for VPS without SSE 4.2)
   scylla:
-    image: scylladb/scylla:6.2
+    image: cassandra:5
     container_name: revns-scylla
     restart: unless-stopped
     ports:
       - "9042:9042"  # CQL port
-      - "9160:9160"  # Thrift port
-      - "9180:9180"  # Prometheus metrics
     volumes:
-      - scylla_data:/var/lib/scylla
+      - scylla_data:/var/lib/cassandra
       - ./infra/init.cql:/docker-entrypoint-initdb.d/init.cql:ro
     environment:
-      - SCYLLA_CLUSTER_NAME=REVNS Cluster
-      - SCYLLA_DC=datacenter1
-      - SCYLLA_RACK=rack1
-    command: --smp 1 --memory 2G --overprovisioned 1
+      - CASSANDRA_CLUSTER_NAME=REVNS Cluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_NUM_TOKENS=16
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=100M
     healthcheck:
       test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
     networks:
       - revns-network
 
