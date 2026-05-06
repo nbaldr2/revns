@@ -60,12 +60,12 @@ func newUploadAggState() *uploadAggState {
 }
 
 const (
-	batchSize         = 3000  // Optimized batch size (balance of speed and size limits)
+	batchSize         = 50    // Reduced for Cassandra batch size limits
 	flushInterval     = 10 * time.Second
 	reportingInterval = 5000 // Report every N rows
 	maxFailureSamples = 50
 	workerCount       = 4    // Parallel workers for faster processing
-	statsBatchSize    = 500  // Safe batch size for provider_stats/provider_ns writes
+	statsBatchSize    = 25    // Reduced for Cassandra batch size limits
 )
 
 func recordRowError(filename string, line int, row []string, reason string) {
