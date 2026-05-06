@@ -99,12 +99,13 @@ CREATE TABLE IF NOT EXISTS ingestion_progress (
 CREATE INDEX IF NOT EXISTS idx_provider_domains_ns ON provider_domains (ns);
 
 -- Materialized view for reverse lookup: domain -> ns (for finding which NS serves a domain)
-CREATE MATERIALIZED VIEW IF NOT EXISTS domain_to_ns_mv AS
-SELECT domain, ns, bucket
-FROM reverse_ns_sharded
-WHERE domain IS NOT NULL AND ns IS NOT NULL AND bucket IS NOT NULL
-PRIMARY KEY (domain, ns, bucket)
-WITH CLUSTERING ORDER BY (ns ASC);
+-- NOTE: Disabled for Cassandra 5 compatibility (MV disabled by default in cassandra.yaml)
+-- CREATE MATERIALIZED VIEW IF NOT EXISTS domain_to_ns_mv AS
+-- SELECT domain, ns, bucket
+-- FROM reverse_ns_sharded
+-- WHERE domain IS NOT NULL AND ns IS NOT NULL AND bucket IS NOT NULL
+-- PRIMARY KEY (domain, ns, bucket)
+-- WITH CLUSTERING ORDER BY (ns ASC);
 
 -- Materialized view for daily domain counts (for analytics)
 CREATE TABLE IF NOT EXISTS daily_domain_counts (

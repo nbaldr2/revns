@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-set timeout 600
+set timeout 900
 set user "root"
 set password {Y-Sah7=D/NbF9r)1}
 set host "37.114.35.146"
@@ -24,8 +24,9 @@ expect {
     eof
 }
 
-# Step 3: Clone or update the repo and deploy
-spawn ssh -o StrictHostKeyChecking=no $user@$host "if \[ -d /root/revns \]; then cd /root/revns && git pull; else cd /root && git clone https://github.com/nbaldr2/revns.git && cd revns; fi && cp -n .env.example .env && docker-compose -f docker-compose.prod.yml down 2>/dev/null; docker-compose -f docker-compose.prod.yml build --no-cache && docker-compose -f docker-compose.prod.yml up -d scylla redis && sleep 30 && until docker exec revns-scylla cqlsh -e 'DESCRIBE KEYSPACES' >/dev/null 2>&1; do echo 'Waiting for ScyllaDB...'; sleep 5; done && echo 'ScyllaDB ready!' && docker-compose -f docker-compose.prod.yml up -d api web && sleep 10 && echo 'Deployment complete!'"
+# Step 3: Pull latest code, stop old containers, rebuild and deploy
+# Cassandra takes ~60-90s to start, so we wait longer for healthcheck
+spawn ssh -o StrictHostKeyChecking=no $user@$host "cd /root/revns && git pull && docker stop revns-scylla revns-api revns-web 2>/dev/null; docker rm revns-scylla revns-api revns-web 2>/dev/null; cp -n .env.example .env && docker-compose -f docker-compose.prod.yml build --no-cache && docker-compose -f docker-compose.prod.yml up -d scylla redis && echo 'Waiting for Cassandra to start (this takes ~60-90s)...' && sleep 60 && until docker exec revns-scylla cqlsh -e 'DESCRIBE KEYSPACES' >/dev/null 2>&1; do echo 'Cassandra not ready yet...'; sleep 10; done && echo 'Cassandra ready!' && docker-compose -f docker-compose.prod.yml up -d api web && sleep 10 && echo 'Deployment complete!'"
 expect {
     "password:" {
         send "$password\r"
