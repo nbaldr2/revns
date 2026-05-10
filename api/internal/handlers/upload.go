@@ -60,12 +60,12 @@ func newUploadAggState() *uploadAggState {
 }
 
 const (
-	batchSize         = 50    // Reduced for Cassandra batch size limits
+	batchSize         = 20    // Reduced for Cassandra 5 batch size limits
 	flushInterval     = 10 * time.Second
 	reportingInterval = 5000 // Report every N rows
 	maxFailureSamples = 50
 	workerCount       = 4    // Parallel workers for faster processing
-	statsBatchSize    = 25    // Reduced for Cassandra batch size limits
+	statsBatchSize    = 10    // Reduced for Cassandra 5 batch size limits
 )
 
 func recordRowError(filename string, line int, row []string, reason string) {
@@ -237,20 +237,47 @@ func processCSVUpload(ctx context.Context, reader io.Reader, filename string) {
 
 	lineNum := 1
 
-	// Read header
-	header, err := csvReader.Read()
+	// Read first row - detect if it's a header or data
+	firstRow, err := csvReader.Read()
 	if err != nil {
-		recordRowError(filename, lineNum, nil, "Failed to read header: "+err.Error())
+		recordRowError(filename, lineNum, nil, "Failed to read CSV: "+err.Error())
 		updateStatus(filename, func(s *UploadStatus) {
 			s.Status = "error"
-			s.Message = "Failed to read header: " + err.Error()
+			s.Message = "Failed to read CSV: " + err.Error()
 		})
 		return
 	}
 
-	updateStatus(filename, func(s *UploadStatus) {
-		s.Message = fmt.Sprintf("CSV columns: %v", header)
-	})
+	// Store first-row records if it's data (not a header)
+	var firstRowRecords []dbRecord
+	if len(firstRow) >= 2 {
+		rankVal := 0
+		fmt.Sscanf(firstRow[1], "%d", &rankVal)
+		if rankVal > 0 {
+			// First row is data, not a header
+			updateStatus(filename, func(s *UploadStatus) {
+				s.Message = "CSV has no header row, processing first row as data"
+			})
+			domain := cleanString(firstRow[0])
+			if domain != "" && len(firstRow) >= 3 {
+				nsField := cleanString(firstRow[2])
+				nsList := parseNameservers(nsField)
+				for _, ns := range nsList {
+					if ns != "" {
+						firstRowRecords = append(firstRowRecords, dbRecord{domain: domain, ns: ns, level: firstRow[1]})
+					}
+				}
+			}
+		} else {
+			updateStatus(filename, func(s *UploadStatus) {
+				s.Message = fmt.Sprintf("CSV columns: %v", firstRow)
+			})
+		}
+	} else {
+		updateStatus(filename, func(s *UploadStatus) {
+			s.Message = fmt.Sprintf("CSV columns: %v", firstRow)
+		})
+	}
 
 	// Process records in batches using unlogged batches
 	batch := make([]dbRecord, 0, batchSize)
@@ -267,6 +294,18 @@ func processCSVUpload(ctx context.Context, reader io.Reader, filename string) {
 		defer wg.Done()
 		processBatchWorker(ctx, recordCh, filename, doneCh)
 	}()
+
+	// Send first-row records now that workers are running
+	for _, r := range firstRowRecords {
+		select {
+		case recordCh <- r:
+		case <-ctx.Done():
+			close(recordCh)
+			close(doneCh)
+			wg.Wait()
+			return
+		}
+	}
 
 	processing := true
 
@@ -536,12 +575,17 @@ func processBatchWorker(ctx context.Context, recordCh <-chan dbRecord, filename 
 		}
 		batchNum++
 
-		// Insert into reverse_ns using unlogged batch (fast)
+		// Insert into reverse_ns_sharded + provider_domains using unlogged batch
 		b := db.Session.NewBatch(0)
 		for _, r := range batch {
+			bucket := calculateUploadBucket(r.domain)
 			b.Query(
-				"INSERT INTO reverse_ns (ns, domain, rank) VALUES (?, ?, ?)",
-				r.ns, r.domain, 0,
+				"INSERT INTO reverse_ns_sharded (ns, bucket, domain, rank) VALUES (?, ?, ?, ?)",
+				r.ns, bucket, r.domain, 0,
+			)
+			b.Query(
+				"INSERT INTO provider_domains (provider, domain, ns, rank) VALUES (?, ?, ?, ?)",
+				extractProviderName(r.ns), r.domain, r.ns, 0,
 			)
 		}
 
@@ -706,4 +750,13 @@ func parseNameservers(nsField string) []string {
 		}
 	}
 	return result
+}
+
+// calculateUploadBucket determines which shard a domain belongs to
+func calculateUploadBucket(domain string) int {
+	hash := 0
+	for _, c := range domain {
+		hash = (hash*31 + int(c)) % 10007
+	}
+	return hash % numBuckets
 }

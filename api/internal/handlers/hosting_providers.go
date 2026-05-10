@@ -30,8 +30,8 @@ func GetTopHostingProviders(c *gin.Context) {
 	start := time.Now()
 	limit := 10 // Top 10 by default
 
-	// Add timeout to prevent hanging requests
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// Use a longer background context for the heavy DB scan (not tied to HTTP timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	result, err, shared := providerGroup.Do("top:10", func() (interface{}, error) {
@@ -65,8 +65,8 @@ func GetAllHostingProviders(c *gin.Context) {
 		limit = defaultProviderLimit
 	}
 
-	// Add timeout to prevent hanging requests
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// Use a longer background context for the heavy DB scan (not tied to HTTP timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Use a consistent cache key for all providers (no limit)
@@ -122,54 +122,74 @@ func fetchHostingProvidersPaged(ctx context.Context, limit int) (models.HostingP
 	return response, nil
 }
 
+const maxProviderRows = 5000 // Cap to avoid unbounded full-table scans
+
 // fetchHostingProvidersFromTable reads from the pre-aggregated provider_stats table
-// This is O(1) vs the previous O(n) full table scan approach
+// Uses gocql page-based iteration to avoid coordinator timeouts on large tables.
 func fetchHostingProvidersFromTable(ctx context.Context, limit int) ([]models.HostingProvider, error) {
 	cacheKey := "hosting-providers:all"
 	if limit > 0 {
 		cacheKey = "hosting-providers:top10"
 	}
 
-	// Try Redis cache first
-	cachedData, err := cache.Client.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var providers []models.HostingProvider
-		if err := json.Unmarshal([]byte(cachedData), &providers); err == nil {
-			if limit > 0 && len(providers) > limit {
-				return providers[:limit], nil
+	// Try Redis cache first (guard against nil client)
+	if cache.Client != nil {
+		cachedData, err := cache.Client.Get(ctx, cacheKey).Result()
+		if err == nil {
+			var providers []models.HostingProvider
+			if err := json.Unmarshal([]byte(cachedData), &providers); err == nil {
+				if limit > 0 && len(providers) > limit {
+					return providers[:limit], nil
+				}
+				return providers, nil
 			}
-			return providers, nil
 		}
 	}
 
-	// Query from provider_stats table - pre-aggregated during ingestion
+	// Query with PageSize so Cassandra returns rows in small batches
+	// instead of one giant response that times out the coordinator.
 	query := "SELECT provider, domain_count FROM provider_stats"
-	iter := db.Session.Query(query).Iter()
+	iter := db.Session.Query(query).WithContext(ctx).PageSize(500).Iter()
 
-	providers := make([]models.HostingProvider, 0)
+	providers := make([]models.HostingProvider, 0, 256)
 	var provider string
 	var domainCount int64
 
 	for iter.Scan(&provider, &domainCount) {
+		if provider == "" {
+			continue
+		}
 		providers = append(providers, models.HostingProvider{
 			ProviderName: provider,
 			DomainCount:  domainCount,
 		})
+		// Safety cap — stop reading after maxProviderRows
+		if len(providers) >= maxProviderRows {
+			_ = iter.Close()
+			break
+		}
 	}
 
 	if err := iter.Close(); err != nil {
-		return nil, err
+		// Return whatever we collected rather than hard-failing
+		if len(providers) == 0 {
+			return nil, err
+		}
 	}
 
-	// Sort by domain count (descending) using efficient sort algorithm
-	// Replaced O(n²) bubble sort with O(n log n) sort
+	// Sort by domain count descending
 	sort.Slice(providers, func(i, j int) bool {
 		return providers[i].DomainCount > providers[j].DomainCount
 	})
 
-	// Cache the results
-	if data, err := json.Marshal(providers); err == nil {
-		cache.Client.Set(ctx, cacheKey, string(data), providerCacheTTL)
+	// Cache the sorted results
+	if cache.Client != nil {
+		if data, err := json.Marshal(providers); err == nil {
+			// Use a background context for the cache write so it doesn't get cancelled
+			cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cacheCancel()
+			cache.Client.Set(cacheCtx, cacheKey, string(data), providerCacheTTL)
+		}
 	}
 
 	if limit > 0 && len(providers) > limit {
