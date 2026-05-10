@@ -215,11 +215,12 @@ func main() {
 
 	// Server configuration with proper timeouts
 	srv := &http.Server{
-		Addr:         ":8080",
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // No timeout for large file downloads
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":8080",
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second, // Protect against Slowloris
+		ReadTimeout:       0,                // No timeout for large file uploads
+		WriteTimeout:      0,                // No timeout for large file downloads
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Start server
