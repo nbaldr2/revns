@@ -214,12 +214,14 @@ func main() {
 	}
 
 	// Server configuration with proper timeouts
+	// WriteTimeout must be 0 (disabled) to allow streaming large CSV downloads
+	// that can take minutes for millions of rows
 	srv := &http.Server{
 		Addr:         ":8080",
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Start server
