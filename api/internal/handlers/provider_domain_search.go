@@ -124,6 +124,7 @@ func GetProviderDomainSearchCSV(c *gin.Context) {
 	filename := fmt.Sprintf("provider-search-%s.csv", providerDomain)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Header("X-Accel-Buffering", "no")
 
 	writer := c.Writer
 	writer.WriteHeader(http.StatusOK)
@@ -134,6 +135,7 @@ func GetProviderDomainSearchCSV(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "streaming not supported"})
 		return
 	}
+	flusher.Flush()
 
 	streamProviderDomainCSV(c.Request.Context(), writer, flusher, providerDomain)
 }
@@ -173,7 +175,7 @@ func streamProviderDomainCSV(ctx context.Context, writer io.Writer, flusher http
 		}
 		seenNS[nsLower] = true
 
-		rowCount += streamDomainsForNS(ctx, csvWriter, ns)
+		rowCount += streamDomainsForNS(ctx, csvWriter, flusher, ns)
 		csvWriter.Flush()
 		flusher.Flush()
 	}
@@ -181,7 +183,7 @@ func streamProviderDomainCSV(ctx context.Context, writer io.Writer, flusher http
 	_ = rowCount
 }
 
-func streamDomainsForNS(ctx context.Context, csvWriter *csv.Writer, ns string) int {
+func streamDomainsForNS(ctx context.Context, csvWriter *csv.Writer, flusher http.Flusher, ns string) int {
 	rowCount := 0
 	query := "SELECT domain FROM reverse_ns WHERE ns = ?"
 	iter := db.Session.Query(query, ns).WithContext(ctx).Iter()
@@ -194,6 +196,12 @@ func streamDomainsForNS(ctx context.Context, csvWriter *csv.Writer, ns string) i
 		}
 		_ = csvWriter.Write([]string{domain})
 		rowCount++
+		if rowCount%5000 == 0 {
+			csvWriter.Flush()
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
 	}
 	_ = iter.Close()
 
@@ -207,6 +215,12 @@ func streamDomainsForNS(ctx context.Context, csvWriter *csv.Writer, ns string) i
 			}
 			_ = csvWriter.Write([]string{domain})
 			rowCount++
+			if rowCount%5000 == 0 {
+				csvWriter.Flush()
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
 		}
 		_ = bucketIter.Close()
 	}
